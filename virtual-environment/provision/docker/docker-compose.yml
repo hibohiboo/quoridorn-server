@@ -1,0 +1,60 @@
+version: "3"
+
+networks:
+  frontend:
+    driver: ${NETWORKS_DRIVER}
+  backend:
+    driver: ${NETWORKS_DRIVER}
+
+volumes:
+  mongo:
+    driver: ${VOLUMES_DRIVER}
+
+services:
+  ### MongoDB ##############################################
+  mongo:
+    build: ./mongo
+    ports:
+      - "${MONGODB_PORT}:27017"
+    volumes:
+      - ${DATA_PATH_HOST}/mongo:/data/db
+    networks:
+      - backend
+  ### MongoWebUI ################################################
+  mongo-webui:
+    build:
+      context: ./mongo-webui
+    environment:
+      - ROOT_URL=${MONGO_WEBUI_ROOT_URL}
+      - MONGO_URL=${MONGO_WEBUI_MONGO_URL}
+      - INSTALL_MONGO=${MONGO_WEBUI_INSTALL_MONGO}
+    volumes:
+      - ${DATA_PATH_HOST}/mongo-webui:/data/db
+    ports:
+      - "${MONGO_WEBUI_PORT}:3000"
+    networks:
+      - backend
+    depends_on:
+      - mongo
+  ### サーバー ##############################################
+  # node-build:
+  #   build: ${QUORIDORN_PATH_ROOT}
+  #   volumes:
+  #     - ${QUORIDORN_PATH_ROOT}:/app
+  #     - /app/node_modules
+  #   command: ["npm", "run", "build", "--", "-w"]
+  #   networks:
+  #     - backend
+
+  node-server:
+    build: ${QUORIDORN_PATH_ROOT}
+    volumes:
+      - ${QUORIDORN_PATH_ROOT}:/app
+      - /app/node_modules
+    ports:
+      - "${QUORIDORN_SERVER_PORT}:8000"
+    command: ["npm", "run", "node-server"]
+    networks:
+      - backend
+    depends_on:
+      - mongo
