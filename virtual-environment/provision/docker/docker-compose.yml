@@ -1,8 +1,6 @@
 version: "3"
 
 networks:
-  frontend:
-    driver: ${NETWORKS_DRIVER}
   backend:
     driver: ${NETWORKS_DRIVER}
 
@@ -37,14 +35,14 @@ services:
     depends_on:
       - mongo
   ### サーバー ##############################################
-  # node-build:
-  #   build: ${QUORIDORN_PATH_ROOT}
-  #   volumes:
-  #     - ${QUORIDORN_PATH_ROOT}:/app
-  #     - /app/node_modules
-  #   command: ["npm", "run", "build", "--", "-w"]
-  #   networks:
-  #     - backend
+  node-build:
+    build: ${QUORIDORN_PATH_ROOT}
+    volumes:
+      - ${QUORIDORN_PATH_ROOT}:/app
+      - /app/node_modules
+    command: ["npm", "run", "build", "--", "-w"]
+    networks:
+      - backend
 
   node-server:
     build: ${QUORIDORN_PATH_ROOT}
