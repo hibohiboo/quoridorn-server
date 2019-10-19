@@ -41,8 +41,6 @@ services:
       - ${QUORIDORN_PATH_ROOT}:/app
       - /app/node_modules
     command: ["npm", "run", "build", "--", "-w"]
-    networks:
-      - backend
 
   node-server:
     build: ${QUORIDORN_PATH_ROOT}
