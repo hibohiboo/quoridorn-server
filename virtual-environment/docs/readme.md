@@ -103,8 +103,41 @@ MONGO_WEBUI_INSTALL_MONGO=false
 
 MONGO_WEBUI_MONGO_URL の quoridorn が作成を期待する DB となる。
 
+### SSL について
+
+テスト用にオレオレ証明書を使っているため、クライアントから接続しようとすると
+`ERR_CERT_AUTHORITY_INVALID`のエラーがでて接続できない。
+
+![](img/2019-10-20-08-34-57.png)
+
+その場合、先に以下の URL をブラウザで開く。
+https://192.168.60.79/socket.io/
+
+詳細設定をクリック。
+
+![](img/2019-10-20-08-35-14.png)
+
+192.168.50.79 にアクセスする（安全ではありません）をクリック。
+安全なのは自分が知ってる。
+
+![](img/2019-10-20-08-36-23.png)
+
+以下の画面が出れば成功。
+![](img/2019-10-20-08-37-47.png)
+
+クライアントの画面に戻って、ページの再読み込みを行う。
+
+![](img/2019-10-20-08-39-17.png)
+
+`ERR_CERT_AUTHORITY_INVALID`のエラーが消えて、プレイルームが表示できた！
+
 ## 参考
 
 [chocolatey instration](https://chocolatey.org/docs/installation)
 [laradock](https://github.com/laradock/laradock)
 [Laradock の Nginx を SSL 化する](https://qiita.com/osakana9114/items/48fb03e51e23dd02871c)
+[WSS が繋がらない](http://wiki.brekeke.jp/WSS-%E3%81%8C%E7%B9%8B%E3%81%8C%E3%82%89%E3%81%AA%E3%81%84)
+[Nginx によるリバースプロキシの設定方法](https://qiita.com/schwarz471/items/9b44adfbec006eab60b0)
+[websocket を使う際の意外な落とし穴](https://blog.mitsuruog.info/2012/10/websocket.html)
+[socketi.io](https://socket.io/)
+[node.js 超入門 ①node.js で web サーバを作ってみる](https://qiita.com/ritukiii/items/7f28554369d63eb373c3)
