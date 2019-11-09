@@ -1,61 +1,73 @@
-import {StoreObj} from "../@types/store";
-import {RoomInfo} from "../@types/room";
-import {Resister, SYSTEM_COLLECTION} from "../server";
-import {RoomPrivateCollection} from "../@types/server";
+import {hashAlgorithm, Resister} from "../server";
 import {SystemError} from "../error/SystemError";
 import {verify} from "../password";
-import {setEvent, getStoreObj} from "./common";
+import {setEvent, getRoomInfo, userLogin} from "./common";
 import Driver from "nekostore/lib/Driver";
+import DocumentSnapshot from "nekostore/lib/DocumentSnapshot";
+import {LoginRequest, LoginResponse, RoomStore, UserLoginRequest} from "../@types/socket";
+import {StoreObj} from "../@types/store";
+import {ApplicationError} from "../error/ApplicationError";
+import {releaseTouchRoom} from "./release-touch-room";
 
 // インタフェース
 const eventName = "login";
-type RequestType = { id: string; no: number; password: string };
-type ResponseType = string | null;
+type RequestType = LoginRequest;
+type ResponseType = LoginResponse | null;
 
 /**
  * ログイン処理
  * @param driver
+ * @param exclusionOwner
  * @param arg
  */
-async function login(driver: Driver, arg: RequestType): Promise<ResponseType> {
-  const docList = (await driver.collection<StoreObj<RoomInfo>>(SYSTEM_COLLECTION.ROOM_LIST)
-    .where("order", "==", arg.no)
-    .get()).docs;
-  const roomInfo = docList.length ? getStoreObj<RoomInfo>(docList[0]) : null;
+async function login(driver: Driver, exclusionOwner: string, arg: RequestType): Promise<ResponseType> {
+  // タッチ解除
+  await releaseTouchRoom(driver, exclusionOwner, {
+    roomNo: arg.roomNo
+  }, true);
 
-  // 部屋存在チェック
-  if (!roomInfo || !roomInfo.data || roomInfo.id !== arg.id)
-    throw new Error(`No such room error. room-no=${arg.no}`);
+  // 部屋一覧の更新
+  const docSnap: DocumentSnapshot<StoreObj<RoomStore>> = await getRoomInfo(
+    driver,
+    arg.roomNo,
+    { id: arg.roomId }
+  );
 
-  const roomSecretCollection = await driver.collection<RoomPrivateCollection>(SYSTEM_COLLECTION.ROOM_SECRET);
-  const roomSecretDoc = (await roomSecretCollection.where("roomId", "==", arg.id).get()).docs;
+  if (!docSnap)
+    throw new ApplicationError(`Untouched room error. room-no=${arg.roomNo}`);
 
-  // 部屋一覧に部屋情報はあるのに、シークレット部屋情報が存在しない場合
-  // → サーバ管理者が手動でレコードを消した以外にはあり得ない
-  // ※ 前段の部屋存在チェックにて、新規部屋作成前のtouch-room状態ではないことは確認済み
-  if (!roomSecretDoc.length)
-    throw new SystemError(`No such room secret info. Please report to server administrator. room-no=${arg.no}, room-id=${arg.id}`);
+  if (!docSnap.data.data)
+    throw new ApplicationError(`Until created room error. room-no=${arg.roomNo}`);
 
-  // シークレット部屋情報が複数件取得できてしまった場合
-  // 仕様上考慮しなくていいとされてきたuuidが重複してしまった本当の想定外エラー
-  if (roomSecretDoc.length > 1)
-    throw new SystemError(`Duplicate room secret info. Please report to server administrator. room-no=${arg.no}, room-id=${arg.id}`);
-
+  // 部屋パスワードチェック
   try {
-    if (await verify(roomSecretDoc[0].data.password, arg.password, "bcrypt")) {
+    if (await verify(docSnap.data.data.roomPassword, arg.roomPassword, hashAlgorithm)) {
       // パスワードチェックOK
-      // 部屋データコレクションの接尾子を返却する
-      return roomSecretDoc[0].data.roomCollectionSuffix;
+      delete docSnap.data.data.roomPassword;
     } else {
       // パスワードチェックで引っかかった
       return null;
     }
   } catch (err) {
-    throw new SystemError(`Login verify fatal error. room-no=${arg.no}`);
+    throw new SystemError(`Login verify fatal error. room-no=${arg.roomNo}`);
   }
+
+  // ユーザログイン処理
+  const userLoginInfo: UserLoginRequest = {
+    roomId: arg.roomId,
+    userName: arg.userName,
+    userType: arg.userType,
+    userPassword: arg.userPassword
+  };
+  if (!await userLogin(driver, exclusionOwner, userLoginInfo)) {
+    // ログイン失敗
+    return null;
+  }
+
+  return docSnap.data.data;
 }
 
 const resist: Resister = (driver: Driver, socket: any): void => {
-  setEvent<RequestType, ResponseType>(driver, socket, eventName, login);
+  setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => login(driver, socket.id, arg));
 };
 export default resist;

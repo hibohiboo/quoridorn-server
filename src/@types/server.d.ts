@@ -6,9 +6,3 @@ export type ServerSetting = {
   roomNum: number;
   roomAutoRemove: number;
 };
-
-export type RoomPrivateCollection = {
-  roomId: string;
-  password: string;
-  roomCollectionSuffix: string;
-};

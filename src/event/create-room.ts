@@ -1,16 +1,17 @@
 import {StoreObj} from "../@types/store";
-import {RoomInfo} from "../@types/room";
-import {Resister, SYSTEM_COLLECTION} from "../server";
-import {ApplicationError} from "../error/ApplicationError";
-import {RoomPrivateCollection} from "../@types/server";
+import {CreateRoomRequest, RoomStore, UserLoginRequest} from "../@types/socket";
+import {hashAlgorithm, Resister} from "../server";
 import {hash} from "../password";
 import uuid from "uuid";
-import {setEvent} from "./common";
+import {getRoomInfo, setEvent, userLogin} from "./common";
 import Driver from "nekostore/lib/Driver";
+import DocumentSnapshot from "nekostore/lib/DocumentSnapshot";
+import {ApplicationError} from "../error/ApplicationError";
+import {releaseTouchRoom} from "./release-touch-room";
 
 // インタフェース
 const eventName = "create-room";
-type RequestType = { no: number; password: string; roomInfo: RoomInfo };
+type RequestType = CreateRoomRequest;
 type ResponseType = string;
 
 /**
@@ -20,40 +21,55 @@ type ResponseType = string;
  * @param arg
  */
 async function createRoom(driver: Driver, exclusionOwner: string, arg: RequestType): Promise<ResponseType> {
+  // タッチ解除
+  await releaseTouchRoom(driver, exclusionOwner, {
+    roomNo: arg.roomNo
+  }, true);
+
   // 部屋一覧の更新
-  const docList = (await driver.collection<StoreObj<RoomInfo>>(SYSTEM_COLLECTION.ROOM_LIST)
-    .where("order", "==", arg.no)
-    .get()).docs;
-  if (!docList.length) throw new Error(`No such room error. room-no=${arg.no}`);
+  const docSnap: DocumentSnapshot<StoreObj<RoomStore>> = await getRoomInfo(
+    driver,
+    arg.roomNo,
+    { id: arg.roomId }
+  );
 
-  const doc = docList[0];
-  const data = doc.data;
+  if (!docSnap || !docSnap.exists())
+    throw new ApplicationError(`Untouched room error. room-no=${arg.roomNo}`);
 
-  // 排他チェック
-  if (!data.exclusionOwner) throw new ApplicationError(`Illegal operation. room-no=${arg.no}`);
-  if (data.exclusionOwner !== exclusionOwner) throw new ApplicationError(`Other player touched. room-no=${arg.no}`);
+  if (docSnap.data.data)
+    throw new ApplicationError(`Already created room error. room-no=${arg.roomNo}`);
 
-  arg.roomInfo.hasPassword = !!arg.password;
+  // リクエスト情報の加工
+  arg.roomPassword = await hash(arg.roomPassword, hashAlgorithm);
+  delete arg.roomNo;
 
-  await doc.ref.update({
-    exclusionOwner: null,
-    data: arg.roomInfo
+  const userInfo: UserLoginRequest = {
+    roomId: arg.roomId,
+    userName: arg.userName,
+    userPassword: arg.userPassword,
+    userType: arg.userType
+  };
+
+  delete arg.userName;
+  delete arg.userPassword;
+  delete arg.userType;
+
+  const storeData: RoomStore = {
+    ...arg,
+    memberNum: 0,
+    hasPassword: !!arg.roomPassword,
+    roomCollectionPrefix: uuid.v4()
+  };
+
+  await docSnap.ref.update({
+    data: storeData,
+    updateTime: new Date()
   });
 
-  // シークレットコレクションへの書き込み
-  const roomSecretCollection = await driver.collection<RoomPrivateCollection>(SYSTEM_COLLECTION.ROOM_SECRET);
+  // つくりたてほやほやの部屋にユーザを追加する
+  await userLogin(driver, exclusionOwner, userInfo);
 
-  // パスワードのハッシュ化
-  const hashedPassword = await hash(arg.password, "bcrypt");
-  // 部屋データコレクションの名前の接尾子を生成
-  const roomCollectionSuffix = uuid.v4();
-
-  roomSecretCollection.add({
-    roomId: doc.ref.id,
-    password: hashedPassword,
-    roomCollectionSuffix
-  });
-  return roomCollectionSuffix;
+  return storeData.roomCollectionPrefix;
 }
 
 const resist: Resister = (driver: Driver, socket: any): void => {
