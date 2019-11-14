@@ -35,7 +35,6 @@ export type RoomLoginInfo = {
 type UserType = "GM" | "PL" | "VISITOR";
 
 export type UserLoginRequest = {
-  roomId: string;
   userName: string;
   userType?: UserType;
   userPassword: string;
@@ -46,8 +45,7 @@ export type TouchRequest = {
 };
 export type ReleaseTouchRequest = TouchRequest
 
-export type LoginRequest = RoomLoginInfo & UserLoginRequest;
-export type CreateRoomRequest = LoginRequest & BaseRoomInfo;
+export type CreateRoomRequest = RoomLoginInfo & BaseRoomInfo;
 export type DeleteRoomRequest = RoomLoginInfo;
 
 export type ClientRoomInfo = BaseRoomInfo & {
@@ -62,6 +60,7 @@ export type Message = {
 export type GetRoomListResponse = {
   roomList: (StoreObj<ClientRoomInfo> & StoreMetaData)[],
   message: Message;
+  version: string;
 };
 
 export type RoomViewResponse = {

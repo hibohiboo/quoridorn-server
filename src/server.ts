@@ -6,7 +6,8 @@ import {ServerSetting} from "./@types/server";
 import * as path from "path";
 import resistGetVersionEvent from "./event/get-version";
 import resistGetRoomListEvent from "./event/get-room-list";
-import resistLoginEvent from "./event/login";
+import resistRoomLoginEvent from "./event/room-login";
+import resistUserLoginEvent from "./event/user-login";
 import resistTouchRoomEvent from "./event/touch-room";
 import resistTouchRoomModifyEvent from "./event/touch-room-modify";
 import resistReleaseTouchRoomEvent from "./event/release-touch-room";
@@ -22,18 +23,26 @@ import Store from "nekostore/src/store/Store";
 import MongoStore from "nekostore/lib/store/MongoStore";
 import MemoryStore from "nekostore/lib/store/MemoryStore";
 import {releaseTouch} from "./event/common";
-import {HashAlgorithmType} from "./password";
+import {HashAlgorithmType} from "./utility/password";
 const co = require("co");
 import { Db } from "mongodb";
 import {StoreObj} from "./@types/store";
 import {RoomStore, SocketStore, TouchierStore, UserStore} from "./@types/socket";
 import {ApplicationError} from "./error/ApplicationError";
+import {SystemError} from "./error/SystemError";
+import {readProperty} from "./utility/propertyFile";
+import {Property} from "./@types/property";
 
 export type Resister = (d: Driver, socket: any) => void;
 export const serverSetting: ServerSetting = YAML.parse(fs.readFileSync(path.resolve(__dirname, "../config/server.yaml"), "utf8"));
 
-export const hashAlgorithm: HashAlgorithmType = "bcrypt";
-export const version: string = "Quoridorn 1.0.0a17";
+const envProperty: Property = readProperty(path.resolve(__dirname, "./.env"));
+export const version: string = `Quoridorn ${envProperty["VERSION"]}`;
+const hashAlgorithmStr: string = envProperty["HASH_ALGORITHM"];
+if (hashAlgorithmStr !== "argon2" && hashAlgorithmStr !== "bcrypt") {
+  throw new SystemError(`Unsupported hash algorithm. hashAlgorithm: ${hashAlgorithmStr}`);
+}
+export const hashAlgorithm: HashAlgorithmType = hashAlgorithmStr;
 
 /**
  * データストアにおいてサーバプログラムが直接参照するコレクションテーブルの名前
@@ -162,8 +171,10 @@ async function main(): Promise<void> {
         resistGetVersionEvent,
         // 部屋情報一覧取得リクエスト
         resistGetRoomListEvent,
-        // ログインリクエスト
-        resistLoginEvent,
+        // 部屋ログインリクエスト
+        resistRoomLoginEvent,
+        // ユーザログインリクエスト
+        resistUserLoginEvent,
         // 部屋（作成）着手リクエスト
         resistTouchRoomEvent,
         // 部屋（編集・削除）着手リクエスト
