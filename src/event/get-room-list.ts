@@ -29,6 +29,7 @@ type ResponseType = GetRoomListResponse;
  */
 async function getRoomList(driver: Driver, socket: any): Promise<ResponseType> {
   try {
+    console.log("START [getRoomList]");
     const c = driver.collection<StoreObj<RoomStore>>(SYSTEM_COLLECTION.ROOM_LIST);
     const infoList: (StoreObj<ClientRoomInfo> & StoreMetaData)[] = (await c.orderBy("order").get()).docs
       .filter(doc => doc.exists())
@@ -63,14 +64,14 @@ async function getRoomList(driver: Driver, socket: any): Promise<ResponseType> {
         } else {
           if (unsubscribe) {
             // snapshotの解除
-            unsubscribe();
+            await unsubscribe();
             unsubscribe = null;
           }
         }
       } catch (err) {
         if (unsubscribe) {
           // snapshotの解除
-          unsubscribe();
+          await unsubscribe();
           unsubscribe = null;
         }
         console.error(err);
@@ -85,17 +86,19 @@ async function getRoomList(driver: Driver, socket: any): Promise<ResponseType> {
         order: i,
         exclusionOwner: null,
         id: null,
+        status: null,
         createTime: null,
         updateTime: null
       });
     }
+    console.log("END [getRoomList]");
     return {
       roomList: infoList,
       message,
       version
     };
   } catch(err) {
-    console.error(err);
+    console.log("ERROR [getRoomList]");
     throw err;
   }
 }
