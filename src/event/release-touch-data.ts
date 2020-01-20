@@ -2,11 +2,11 @@ import {Resister} from "../server";
 import {ApplicationError} from "../error/ApplicationError";
 import {deleteTouchier, getData, setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
-import {ReleaseTouchRequest} from "../@types/data";
+import {ReleaseTouchDataRequest} from "../@types/socket";
 
 // インタフェース
 const eventName = "release-touch-data";
-type RequestType = ReleaseTouchRequest;
+type RequestType = ReleaseTouchDataRequest;
 type ResponseType = void;
 
 /**
@@ -17,45 +17,34 @@ type ResponseType = void;
  * @param updateForce
  */
 export async function releaseTouchData(driver: Driver, exclusionOwner: string, arg: RequestType, updateForce?: boolean): Promise<ResponseType> {
-  console.log(`START [releaseTouchData (${exclusionOwner}) collection=${arg.collection} id=${arg.id}`);
+  const docSnap = await getData(driver, arg.collection, arg.id, { exclusionOwner });
 
-  let docSnap;
-  try {
-    docSnap = await getData(driver, arg.collection, arg.id, {
-      exclusionOwner
-    });
-  } catch (err) {
-    console.log(`ERROR [releaseTouchData (${exclusionOwner}) collection=${arg.collection} id=${arg.id}`);
-    throw err;
-  }
+  const createThrowDetail = (detail: string) => updateForce ? `Failure releaseTouchData. (${detail})` : detail;
 
-  if (!docSnap) {
-    console.log(`ERROR [releaseTouchData (${exclusionOwner}) collection=${arg.collection} id=${arg.id}`);
-    throw new ApplicationError(`Already released touch or created data. collection=${arg.collection} id=${arg.id} exclusionOwner=${exclusionOwner}`);
-  }
+  if (!docSnap) throw new ApplicationError(createThrowDetail("Already released touch or created."), arg);
 
-  try {
-    await deleteTouchier(driver, exclusionOwner, arg.collection, docSnap.ref.id);
-  } catch (err) {
-    console.log(`ERROR [releaseTouchData (${exclusionOwner}) collection=${arg.collection} id=${arg.id}`);
-    throw err;
-  }
+  // 続けて更新する場合は排他制御情報をリセットしない
+  if (arg.continuous) return;
 
-  try {
-    if (updateForce || docSnap.data!.data) {
-      await docSnap.ref.update({
-        exclusionOwner: null,
-        updateTime: new Date()
-      });
-    } else {
-      await docSnap.ref.delete();
+  await deleteTouchier(driver, exclusionOwner, arg.collection, docSnap.ref.id);
+
+  if (updateForce || docSnap.data!.data) {
+    const updateInfo = {
+      exclusionOwner: null,
+      updateTime: new Date()
+    };
+    try {
+      await docSnap.ref.update(updateInfo);
+    } catch (err) {
+      throw new ApplicationError(createThrowDetail("Failure update doc."), updateInfo);
     }
-  } catch (err) {
-    console.log(`ERROR [releaseTouchData (${exclusionOwner}) collection=${arg.collection} id=${arg.id}`);
-    throw err;
+  } else {
+    try {
+      await docSnap.ref.delete();
+    } catch (err) {
+      throw new ApplicationError(createThrowDetail("Failure delete doc."), arg);
+    }
   }
-
-  console.log(`END [releaseTouchData (${exclusionOwner}) collection=${arg.collection} id=${arg.id}`);
 }
 
 const resist: Resister = (driver: Driver, socket: any): void => {

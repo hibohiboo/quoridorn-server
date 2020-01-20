@@ -4,7 +4,7 @@
   "description": "Application server of the Quoridorn.",
   "main": "index.js",
   "scripts": {
-    "build": "tsc -t ES5",
+    "build": "tsc -t ES5 && cpx -C src/interoperability.yaml dist",
     "node-server": "node dist/server.js",
     "server": "npx ts-node src/server.ts",
     "test-server": "npx ts-node src/nekostore_test/test_server.ts",
@@ -23,11 +23,16 @@
   },
   "homepage": "https://github.com/HillTopTRPG/quoridorn-server#readme",
   "dependencies": {
+    "@types/mongodb": "^3.3.14",
+    "@types/node-fetch": "^2.5.4",
+    "@types/socket.io-client": "^1.4.32",
     "@types/uuid": "^3.4.5",
+    "@types/yaml": "^1.2.0",
     "argon2": "^0.25.0",
     "bcrypt": "^3.0.6",
     "co": "^4.6.0",
     "dotenv": "^8.2.0",
+    "log4js": "^6.1.0",
     "moment": "^2.24.0",
     "mongodb": "^3.3.2",
     "nekostore": "^0.6.0",
@@ -35,5 +40,8 @@
     "typescript": "^3.6.4",
     "uuid": "^3.3.3",
     "yaml": "^1.7.1"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0"
   }
 }

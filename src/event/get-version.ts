@@ -1,10 +1,9 @@
 import {
   GetVersionResponse
 } from "../@types/socket";
-import {Resister, version} from "../server";
+import {getMessage, Resister, targetClient, version} from "../server";
 import {setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
-import {message} from "./get-room-list";
 
 // インタフェース
 const eventName = "get-version";
@@ -15,10 +14,11 @@ type ResponseType = GetVersionResponse;
  * サーバのバージョン番号を返却する
  */
 async function getVersion(): Promise<ResponseType> {
-  console.log("getVersion");
+  const message = getMessage();
   return {
     version,
-    title: message.title
+    title: message.title,
+    targetClient: targetClient
   }
 }
 

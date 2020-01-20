@@ -1,5 +1,5 @@
 import {StoreObj} from "../@types/store";
-import {DeleteRoomRequest, RoomStore, UserStore} from "../@types/socket";
+import {DeleteRoomRequest} from "../@types/socket";
 import {hashAlgorithm, Resister} from "../server";
 import {verify} from "../utility/password";
 import {getRoomInfo, setEvent} from "./common";
@@ -9,6 +9,7 @@ import {ApplicationError} from "../error/ApplicationError";
 import {SystemError} from "../error/SystemError";
 import {releaseTouchRoom} from "./release-touch-room";
 import { Db } from "mongodb";
+import {RoomStore, UserStore} from "../@types/data";
 
 // インタフェース
 const eventName = "delete-room";
@@ -16,7 +17,7 @@ type RequestType = DeleteRoomRequest;
 type ResponseType = boolean;
 
 const suffixList = [
-  "map-list",
+  "screen-list",
   "map-layer-list",
   "map-and-layer-list",
   "room-data",
@@ -35,7 +36,8 @@ const suffixList = [
   "floor-tile-list",
   "chit-list",
   "map-mask-list",
-  "tag-note-list"
+  "tag-note-list",
+  "actor-group-list"
 ];
 
 /**
@@ -46,83 +48,49 @@ const suffixList = [
  * @param db
  */
 async function deleteRoom(driver: Driver, exclusionOwner: string, arg: RequestType, db?: Db): Promise<ResponseType> {
-  console.log(`START [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-
   // タッチ解除
-  try {
-    await releaseTouchRoom(driver, exclusionOwner, {
-      roomNo: arg.roomNo
-    }, true);
-  } catch (err) {
-    console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-    throw err;
-  }
+  await releaseTouchRoom(driver, exclusionOwner, {
+    roomNo: arg.roomNo
+  }, true);
 
   // 部屋一覧の更新
-  let docSnap: DocumentSnapshot<StoreObj<RoomStore>>;
-  try {
-    docSnap = await getRoomInfo(
-      driver,
-      arg.roomNo,
-      { id: arg.roomId }
-    );
-  } catch (err) {
-    console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-    throw err;
-  }
+  const docSnap: DocumentSnapshot<StoreObj<RoomStore>> | null = await getRoomInfo(
+    driver,
+    arg.roomNo,
+    { id: arg.roomId }
+  );
 
-  if (!docSnap || !docSnap.exists()) {
-    console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-    throw new ApplicationError(`Untouched room error. room-no=${arg.roomNo}`);
-  }
+  // Untouched check.
+  if (!docSnap || !docSnap.exists()) throw new ApplicationError(`Untouched room.`, arg);
 
+  // Already check.
   const data = docSnap.data.data;
-  if (!data) {
-    console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-    throw new ApplicationError(`Already deleted room error. room-no=${arg.roomNo}`);
-  }
+  if (!data) throw new ApplicationError(`Already deleted.`, arg);
 
   // 部屋パスワードチェック
   try {
-    if (!await verify(docSnap.data.data.roomPassword, arg.roomPassword, hashAlgorithm)) {
+    if (!await verify(docSnap.data.data!.roomPassword, arg.roomPassword, hashAlgorithm)) {
       // パスワードチェックで引っかかった
-      console.log(`END (PASSWORD ERROR) [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
       return false;
     }
   } catch (err) {
-    console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
     throw new SystemError(`Login verify fatal error. room-no=${arg.roomNo}`);
   }
 
-  const roomId = docSnap.ref.id;
   try {
     await docSnap.ref.delete();
   } catch (err) {
-    console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-    throw err;
+    throw new ApplicationError(`Failure delete doc.`, arg);
   }
-
-  // // 部屋に紐づくユーザの削除
-  // const roomUserCollectionName = `${data.roomCollectionPrefix}-DATA-user-list`;
-  // const userCollection = driver.collection<StoreObj<UserStore>>(roomUserCollectionName);
-  // const docs = (await userCollection.where("data.roomId", "==", roomId).get()).docs;
-  // docs.forEach(async doc => {
-  //   if (!doc || !doc.exists()) return;
-  //   try {
-  //     await doc.ref.delete();
-  //   } catch (err) {
-  //     console.log(`ERROR [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
-  //     throw err;
-  //   }
-  // });
 
   if (db) {
     const deleteCollection = (suffix: string) => {
-      db.collection(`${data.roomCollectionPrefix}-DATA-${suffix}`).drop((err, delOK) => {
+      db.collection(`${data.roomCollectionPrefix}-DATA-${suffix}`).drop(() => {
+        // args: err, delOK
         // nothing.
       });
     };
-    // TODO 各部屋情報コレクションの削除
+
     const roomUserCollectionName = `${data.roomCollectionPrefix}-DATA-user-list`;
     const userCollection = driver.collection<StoreObj<UserStore>>(roomUserCollectionName);
     suffixList.forEach(async s => {
@@ -139,11 +107,10 @@ async function deleteRoom(driver: Driver, exclusionOwner: string, arg: RequestTy
     });
   }
 
-  console.log(`END [deleteRoom (${exclusionOwner})] no=${arg.roomNo}, id=${arg.roomId}`);
   return true;
 }
 
-const resist: Resister = (driver: Driver, socket: any, db: Db): void => {
+const resist: Resister = (driver: Driver, socket: any, db?: Db): void => {
   setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => deleteRoom(driver, socket.id, arg, db));
 };
 export default resist;

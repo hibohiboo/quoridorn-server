@@ -3,11 +3,12 @@ import {Resister, SYSTEM_COLLECTION} from "../server";
 import {ApplicationError} from "../error/ApplicationError";
 import {addTouchier, checkViewer, getRoomInfo, setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
-import {RoomStore, TouchRequest} from "../@types/socket";
+import {TouchRoomRequest} from "../@types/socket";
+import {RoomStore} from "../@types/data";
 
 // インタフェース
 const eventName = "touch-room";
-type RequestType = TouchRequest;
+type RequestType = TouchRoomRequest;
 type ResponseType = void;
 
 /**
@@ -17,49 +18,45 @@ type ResponseType = void;
  * @param arg 部屋番号
  */
 async function touchRoom(driver: Driver, exclusionOwner: string, arg: RequestType): Promise<ResponseType> {
-  console.log(`START [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
   const c = await driver.collection<StoreObj<RoomStore>>(SYSTEM_COLLECTION.ROOM_LIST);
 
-  let docSnap;
-  try {
-    docSnap = await getRoomInfo(driver, arg.roomNo, { collectionReference: c });
-  } catch (err) {
-    console.log(`ERROR [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
-    throw err;
-  }
+  const docSnap = await getRoomInfo(driver, arg.roomNo, { collectionReference: c });
 
-  if (!await checkViewer(driver, exclusionOwner, false)) {
-    console.log(`ERROR [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
-    throw new ApplicationError(`Unsupported user.`);
-  }
+  if (!await checkViewer(driver, exclusionOwner))
+    throw new ApplicationError(`Unsupported user.`, { socketId: exclusionOwner });
 
-  if (docSnap) {
-    console.log(`ERROR [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
-    throw new ApplicationError(`Already touched or created room. room-no=${arg.roomNo}`);
-  }
+  if (docSnap) throw new ApplicationError(`Already touched or created room.`, arg);
 
   let docRef;
+  const addInfo: StoreObj<RoomStore> = {
+    order: arg.roomNo,
+    exclusionOwner,
+    owner: null,
+    status: "initial-touched",
+    createTime: new Date(),
+    updateTime: null,
+    permission: {
+      view: {
+        type: "none",
+        list: []
+      },
+      edit: {
+        type: "none",
+        list: []
+      },
+      chmod: {
+        type: "none",
+        list: []
+      }
+    }
+  };
   try {
-    docRef = await c.add({
-      order: arg.roomNo,
-      exclusionOwner,
-      status: "initial-touched",
-      createTime: new Date(),
-      updateTime: null
-    });
+    docRef = await c.add(addInfo);
   } catch (err) {
-    console.log(`ERROR [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
-    throw err;
+    throw new ApplicationError(`Failure add doc.`, addInfo);
   }
 
-  try {
-    await addTouchier(driver, exclusionOwner, SYSTEM_COLLECTION.ROOM_LIST, docRef.id);
-  } catch (err) {
-    console.log(`ERROR [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
-    throw err;
-  }
-
-  console.log(`END [touchRoom (${exclusionOwner})] no=${arg.roomNo}`);
+  await addTouchier(driver, exclusionOwner, SYSTEM_COLLECTION.ROOM_LIST, docRef.id);
 }
 
 const resist: Resister = (driver: Driver, socket: any): void => {
