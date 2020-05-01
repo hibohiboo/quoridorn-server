@@ -2,7 +2,7 @@ import BasicDriver from "nekostore/lib/driver/basic";
 import SocketDriverServer from "nekostore/lib/driver/socket/SocketDriverServer";
 import fs from "fs";
 import YAML from "yaml";
-import {Interoperability, ServerSetting} from "./@types/server";
+import {Interoperability, ServerSetting, StorageSetting} from "./@types/server";
 import * as path from "path";
 import resistGetVersionEvent from "./event/get-version";
 import resistGetRoomListEvent from "./event/get-room-list";
@@ -17,8 +17,12 @@ import resistTouchDataEvent from "./event/touch-data";
 import resistTouchDataModifyEvent from "./event/touch-data-modify";
 import resistReleaseTouchDataEvent from "./event/release-touch-data";
 import resistUpdateDataEvent from "./event/update-data";
+import resistUpdateDataPackageEvent from "./event/update-data-package";
 import resistCreateDataEvent from "./event/create-data";
 import resistDeleteDataEvent from "./event/delete-data";
+import resistSendDataEvent from "./event/send-data";
+import resistAddDirectEvent from "./event/add-direct";
+import resistUploadFileEvent from "./event/upload-file";
 import Driver from "nekostore/lib/Driver";
 import Store from "nekostore/src/store/Store";
 import MongoStore from "nekostore/lib/store/MongoStore";
@@ -27,15 +31,28 @@ import {getSocketDocSnap, releaseTouch} from "./event/common";
 import {HashAlgorithmType} from "./utility/password";
 const co = require("co");
 import { Db } from "mongodb";
-import {StoreObj} from "./@types/store";
+import {Permission, StoreObj} from "./@types/store";
 import {Message} from "./@types/socket";
 import {ApplicationError} from "./error/ApplicationError";
 import {SystemError} from "./error/SystemError";
 import {compareVersion, getFileRow, TargetVersion} from "./utility/GitHub";
 import {accessLog} from "./utility/logger";
-import {RoomStore, SocketStore, TouchierStore, UserStore} from "./@types/data";
+import {RoomStore, SocketStore, SocketUserStore, TouchierStore, UserStore} from "./@types/data";
+import * as Minio from "minio";
 
-export type Resister = (d: Driver, socket: any, db?: Db) => void;
+export const PERMISSION_DEFAULT: Permission = {
+  view: { type: "none", list: [] },
+  edit: { type: "none", list: [] },
+  chmod: { type: "none", list: [] }
+};
+
+export const PERMISSION_OWNER_CHANGE: Permission = {
+  view: { type: "none", list: [] },
+  edit: { type: "allow", list: [{ type: "owner" }] },
+  chmod: { type: "allow", list: [{ type: "owner" }] }
+};
+
+export type Resister = (d: Driver, socket: any, io: any, db?: Db) => void;
 export const serverSetting: ServerSetting = YAML.parse(fs.readFileSync(path.resolve(__dirname, "../config/server.yaml"), "utf8"));
 export const interoperability: Interoperability[] = YAML.parse(fs.readFileSync(path.resolve(__dirname, "./interoperability.yaml"), "utf8"));
 export const targetClient: TargetVersion = {
@@ -58,14 +75,36 @@ if (hashAlgorithmStr !== "argon2" && hashAlgorithmStr !== "bcrypt") {
 }
 export const hashAlgorithm: HashAlgorithmType = hashAlgorithmStr;
 
+const storageSetting: StorageSetting = YAML.parse(fs.readFileSync(path.resolve(__dirname, "../config/storage.yaml"), "utf8"));
+const clientOption = {
+  endPoint: storageSetting.endPoint,
+  port: storageSetting.port,
+  useSSL: storageSetting.useSSL,
+  accessKey: storageSetting.accessKey,
+  secretKey: storageSetting.secretKey
+};
+export const bucket = storageSetting.bucket;
+export const accessUrl = storageSetting.accessUrl;
+
+let _s3Client: Minio.Client | null = null;
+try {
+  _s3Client = new Minio.Client(clientOption);
+  console.log(`S3 Storage connect success. (bucket: ${bucket})`);
+} catch (err) {
+  console.error("S3 Storage connect failure. ");
+  console.error("Please review your settings. (src: config/storage.yaml)");
+  console.error(JSON.stringify(clientOption, null, "  "));
+  console.error(err);
+  throw err;
+}
+export const s3Client = _s3Client;
+
 /**
  * データストアにおいてサーバプログラムが直接参照するコレクションテーブルの名前
  */
 export namespace SYSTEM_COLLECTION {
   /** 部屋一覧 */
   export const ROOM_LIST = `rooms-${serverSetting.secretCollectionSuffix}`;
-  /** 部屋一覧情報を受信するsocket.idの一覧 */
-  export const ROOM_VIEWER_LIST = `room-viewer-list-${serverSetting.secretCollectionSuffix}`;
   /** タッチしているsocket.idの一覧 */
   export const TOUCH_LIST = `touch-list-${serverSetting.secretCollectionSuffix}`;
   /** 接続中のsocket.idの一覧 */
@@ -95,6 +134,8 @@ async function addSocketList(driver: Driver, socketId: string): Promise<void> {
   await driver.collection<SocketStore>(SYSTEM_COLLECTION.SOCKET_LIST).add({
     socketId,
     roomId: null,
+    roomCollectionPrefix: null,
+    storageId: null,
     userId: null,
     connectTime: new Date()
   });
@@ -131,6 +172,18 @@ async function logout(driver: Driver, socketId: string): Promise<void> {
         data: roomData
       });
     }
+
+    const roomSocketUserCollectionName = `${roomData.roomCollectionPrefix}-DATA-socket-user-list`;
+    const socketUserDocSnap = (await driver.collection<StoreObj<SocketUserStore>>(roomSocketUserCollectionName)
+      .where("data.socketId", "==", socketId)
+      .get())
+      .docs
+      .filter(doc => doc && doc.exists())[0];
+
+    if (!socketUserDocSnap)
+      throw new ApplicationError(`No such user. user-id=${socketData.userId}`);
+
+    await socketUserDocSnap.ref.delete();
   }
   await snap.ref.delete();
 }
@@ -201,7 +254,7 @@ async function main(): Promise<void> {
           // 切断したらその人が行なっていたすべてのタッチを解除
           await releaseTouch(driver, socket.id);
 
-          // 接続情報にから削除
+          // 接続情報から削除
           await logout(driver, socket.id);
         } catch (err) {
           console.error(err);
@@ -241,9 +294,17 @@ async function main(): Promise<void> {
         resistCreateDataEvent,
         // データ更新リクエスト
         resistUpdateDataEvent,
+        // データ更新リクエスト
+        resistUpdateDataPackageEvent,
         // データ削除リクエスト
-        resistDeleteDataEvent
-      ].forEach((r: Resister) => r(driver, socket, db));
+        resistDeleteDataEvent,
+        // データ送信リクエスト
+        resistSendDataEvent,
+        // データ一括追加リクエスト
+        resistAddDirectEvent,
+        // ファイルアップロードリクエスト
+        resistUploadFileEvent
+      ].forEach((r: Resister) => r(driver, socket, io, db));
     });
 
     // setInterval(() => {

@@ -9,36 +9,12 @@ import {ApplicationError} from "../error/ApplicationError";
 import {SystemError} from "../error/SystemError";
 import {releaseTouchRoom} from "./release-touch-room";
 import { Db } from "mongodb";
-import {RoomStore, UserStore} from "../@types/data";
+import {RoomStore} from "../@types/data";
 
 // インタフェース
 const eventName = "delete-room";
 type RequestType = DeleteRoomRequest;
 type ResponseType = boolean;
-
-const suffixList = [
-  "screen-list",
-  "map-layer-list",
-  "map-and-layer-list",
-  "room-data",
-  "image-list",
-  "image-tag-list",
-  "cut-in-list",
-  "$userId-play-list",
-  "play-list",
-  "user-list",
-  "property-list",
-  "property-selection-list",
-  "property-face-list",
-  "character-list",
-  "extra-list",
-  "dice-symbol-list",
-  "floor-tile-list",
-  "chit-list",
-  "map-mask-list",
-  "tag-note-list",
-  "actor-group-list"
-];
 
 /**
  * 部屋削除処理
@@ -91,26 +67,30 @@ async function deleteRoom(driver: Driver, exclusionOwner: string, arg: RequestTy
       });
     };
 
-    const roomUserCollectionName = `${data.roomCollectionPrefix}-DATA-user-list`;
-    const userCollection = driver.collection<StoreObj<UserStore>>(roomUserCollectionName);
-    suffixList.forEach(async s => {
-      if (s.startsWith("$userId-")) {
-        const docs = (await userCollection.get()).docs;
-        docs.forEach(async doc => {
-          if (!doc || !doc.exists()) return;
-          const userId = doc.ref.id;
-          deleteCollection(s.replace("$userId", userId));
-        });
-      } else {
-        deleteCollection(s);
-      }
+    const roomCollectionPrefix = data.roomCollectionPrefix;
+
+    // メディアコレクションからメディアストレージの削除
+    const mediaCCName = `${roomCollectionPrefix}-DATA-media-list`;
+    const mediaCC = driver.collection<StoreObj<{ url: string }>>(mediaCCName);
+    (await mediaCC.get()).docs.map(d => d.data!.data!.url).forEach(url => {
+      deleteCollection(url);
     });
+
+    // 部屋のコレクションの削除
+    const collectionNameCollectionName = `${roomCollectionPrefix}-DATA-collection-list`;
+    const cnCC = driver.collection<{ name: string }>(collectionNameCollectionName);
+    (await cnCC.get()).docs.map(d => d.data!.name).forEach(name => {
+      deleteCollection(name);
+    });
+    deleteCollection(collectionNameCollectionName);
+
+    // TODO Storageも削除する
   }
 
   return true;
 }
 
-const resist: Resister = (driver: Driver, socket: any, db?: Db): void => {
+const resist: Resister = (driver: Driver, socket: any, _io: any, db?: Db): void => {
   setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => deleteRoom(driver, socket.id, arg, db));
 };
 export default resist;

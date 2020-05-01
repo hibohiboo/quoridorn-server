@@ -1,7 +1,9 @@
 export type StoreObj<T> = {
+  ownerType: string | null;
+  owner: string | null;
   order: number;
   exclusionOwner: string | null; // 排他制御のオーナー
-  owner: string | null;
+  lastExclusionOwner: string | null; // 排他制御のオーナー
   permission: Permission | null; // 通常はnullではない
   status: "initial-touched" | "added" | "modify-touched" | "touched-released" | "modified" | null;
   createTime: Date | null;
@@ -14,7 +16,7 @@ export type StoreMetaData = {
 };
 
 export type PermissionNode = {
-  type: "group" | "user" | "character" | "owner";
+  type: "group" | "actor" | "owner";
   id?: string;
 };
 

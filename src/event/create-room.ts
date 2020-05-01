@@ -1,6 +1,6 @@
 import {StoreObj} from "../@types/store";
 import {CreateRoomRequest} from "../@types/socket";
-import {hashAlgorithm, Resister} from "../server";
+import {PERMISSION_DEFAULT, hashAlgorithm, Resister} from "../server";
 import {hash} from "../utility/password";
 import uuid from "uuid";
 import {getRoomInfo, getSocketDocSnap, setEvent} from "./common";
@@ -50,12 +50,16 @@ async function createRoom(driver: Driver, exclusionOwner: string, arg: RequestTy
   }
   delete arg.roomNo;
 
+  const roomCollectionPrefix = uuid.v4();
+  const storageId = uuid.v4();
+
   // 部屋情報の更新
   const storeData: RoomStore = {
     ...arg,
     memberNum: 0,
     hasPassword: !!arg.roomPassword,
-    roomCollectionPrefix: uuid.v4()
+    roomCollectionPrefix,
+    storageId
   };
 
   const updateRoomInfo: Partial<StoreObj<RoomStore>> = {
@@ -70,54 +74,40 @@ async function createRoom(driver: Driver, exclusionOwner: string, arg: RequestTy
   }
 
   // Socket情報の更新
-  const updateSocketInfo: Partial<SocketStore> = { roomId: arg.roomId };
+  const updateSocketInfo: Partial<SocketStore> = { roomId: arg.roomId, roomCollectionPrefix, storageId };
   try {
     await socketDocSnap.ref.update(updateSocketInfo);
   } catch (err) {
     throw new ApplicationError(`Failure update socketInfo doc.`, updateSocketInfo);
   }
 
-  const roomCollectionPrefix = storeData.roomCollectionPrefix;
-
   // 部屋に付随する情報の生成
   const actorGroupCCName = `${roomCollectionPrefix}-DATA-actor-group-list`;
   const actorGroupCC = driver.collection<StoreObj<ActorGroup>>(actorGroupCCName);
 
-  const addGroup = async (name: string, order: number, isChatGroup: boolean) => {
+  const addGroup = async (name: string, order: number) => {
     await actorGroupCC.add({
+      ownerType: null,
+      owner: null,
       order,
       exclusionOwner: null,
-      owner: null,
-      permission: {
-        view: {
-          type: "none",
-          list: []
-        },
-        edit: {
-          type: "none",
-          list: []
-        },
-        chmod: {
-          type: "none",
-          list: []
-        }
-      },
+      lastExclusionOwner: null,
+      permission: PERMISSION_DEFAULT,
       status: "added",
       createTime: new Date(),
       updateTime: null,
       data: {
         name,
         isSystem: true,
-        isChatGroup,
         list: []
       }
     });
   };
-  await addGroup("All", 0, true);
-  await addGroup("Users", 1, false);
-  await addGroup("GameMasters", 2, false);
-  await addGroup("Players", 3, false);
-  await addGroup("Visitors", 4, false);
+  await addGroup("All", 0);
+  await addGroup("Users", 1);
+  await addGroup("GameMasters", 2);
+  await addGroup("Players", 3);
+  await addGroup("Visitors", 4);
 
   // 接尾句を返却
   return roomCollectionPrefix;

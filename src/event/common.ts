@@ -1,20 +1,25 @@
 import Driver from "nekostore/lib/Driver";
 import DocumentSnapshot from "nekostore/lib/DocumentSnapshot";
 import {Permission, StoreMetaData, StoreObj} from "../@types/store";
-import {hashAlgorithm, SYSTEM_COLLECTION} from "../server";
+import {PERMISSION_DEFAULT, hashAlgorithm, SYSTEM_COLLECTION, PERMISSION_OWNER_CHANGE} from "../server";
 import {SystemError} from "../error/SystemError";
-import {
-  UserLoginResponse,
-  UserType
-} from "../@types/socket";
+import {UploadFileInfo, UserLoginResponse, UserType} from "../@types/socket";
 import {ApplicationError} from "../error/ApplicationError";
 import CollectionReference from "nekostore/src/CollectionReference";
 import DocumentChange from "nekostore/lib/DocumentChange";
 import Query from "nekostore/lib/Query";
 import {hash} from "../utility/password";
-import uuid = require("uuid");
 import {accessLog, errorLog} from "../utility/logger";
-import {ActorGroup, RoomStore, SocketStore, TouchierStore, UserStore} from "../@types/data";
+import {
+  ActorGroup,
+  ActorStatusStore,
+  ActorStore,
+  RoomStore,
+  SocketStore,
+  TouchierStore,
+  UserStore
+} from "../@types/data";
+import uuid = require("uuid");
 
 /**
  * リクエスト処理を登録するための関数。
@@ -26,7 +31,13 @@ import {ActorGroup, RoomStore, SocketStore, TouchierStore, UserStore} from "../@
 export function setEvent<T, U>(driver: Driver, socket: any, eventName: string, func: (driver: Driver, arg: T, permission?: Permission) => Promise<U>) {
   const resultEvent = `result-${eventName}`;
   socket.on(eventName, async (arg: T) => {
-    accessLog(socket.id, eventName, "START", arg);
+    const logArg = arg ? JSON.parse(JSON.stringify(arg)) : null;
+    if (eventName === "upload-file") {
+      logArg.forEach((info: UploadFileInfo) => {
+        info.src = "[Binary Array]";
+      });
+    }
+    accessLog(socket.id, eventName, "START", logArg);
     try {
       const result = await func(driver, arg);
       accessLog(socket.id, eventName, "END  ", result);
@@ -63,6 +74,19 @@ type GetRoomInfoOption = {
   id?: string;
   collectionReference?: CollectionReference<StoreObj<RoomStore>>;
 };
+
+export async function registCollectionName(driver: Driver, collection: string) {
+  const roomCollectionPrefix = collection.replace(/DATA-.+$/, "");
+  const collectionNameCollectionName = `${roomCollectionPrefix}-DATA-collection-list`;
+  const cnCC = driver.collection<{ name: string }>(collectionNameCollectionName);
+  if (!(await cnCC.where("name", "==", collection).get()).docs.length) {
+    await cnCC.add({ name: collection });
+  }
+}
+
+export function notifyProgress(socket: any, all: number, current: number) {
+  if (all > 1) socket.emit("notify-progress", null, { all, current });
+}
 
 /**
  * 部屋情報コレクションから特定の部屋の情報を取得する
@@ -134,12 +158,12 @@ export async function getData(
     const data = docSnap.data;
     if (!data.exclusionOwner)
       throw new ApplicationError(
-        `Failure getRoomInfo. (Target roomInfo document has not exclusionOwner.)`,
+        `Failure getData. (Target data document has not exclusionOwner.)`,
         { collection, id }
       );
     if (data.exclusionOwner !== option.exclusionOwner)
       throw new ApplicationError(
-        `Failure getRoomInfo. (Already touched.)`,
+        `Failure getData. (Already touched.)`,
         { collection, id }
       );
   }
@@ -151,52 +175,153 @@ export async function checkViewer(driver: Driver, exclusionOwner: string): Promi
   return !(viewerInfo && viewerInfo.roomId && viewerInfo.userId);
 }
 
-export async function addUser(
+export async function additionalStatus(
   driver: Driver,
-  exclusionOwner: string,
   roomCollectionPrefix: string,
-  userName: string,
-  userPassword: string,
-  userType: UserType
-): Promise<UserLoginResponse> {
-  const roomUserCollectionName = `${roomCollectionPrefix}-DATA-user-list`;
-  const userCollection = driver.collection<StoreObj<UserStore>>(roomUserCollectionName);
-  const actorGroupCollectionName = `${roomCollectionPrefix}-DATA-actor-group-list`;
-  const actorGroupCollection = driver.collection<StoreObj<ActorGroup>>(actorGroupCollectionName);
-  const socketDocSnap = (await getSocketDocSnap(driver, exclusionOwner));
+  actorId: string
+): Promise<string> {
+  const statusCollectionName = `${roomCollectionPrefix}-DATA-status-list`;
+  const statusResult = await getMaxOrder<ActorStatusStore>(driver, statusCollectionName);
+  const statusCollection = statusResult.c;
 
-  userPassword = await hash(userPassword, hashAlgorithm);
-
-  const token = uuid.v4();
-
-  const userDocRef = await userCollection.add({
-    order: -1,
+  const statusDocRef = await statusCollection.add({
+    ownerType: "user",
+    owner: actorId,
+    order: statusResult.maxOrder + 1,
     exclusionOwner: null,
-    owner: null,
+    lastExclusionOwner: null,
     status: "added",
     createTime: new Date(),
     updateTime: null,
     data: {
-      userName,
-      userPassword,
+      name: "◆",
+      isSystem: true,
+      standImageInfoId: null,
+      chatPaletteInfoId: null
+    },
+    permission: PERMISSION_DEFAULT
+  });
+
+  return statusDocRef.id;
+}
+
+export async function addActor(
+  driver: Driver,
+  roomCollectionPrefix: string,
+  owner: string,
+  actorInfoPartial: Partial<ActorStore>
+): Promise<string> {
+  const actorCollectionName = `${roomCollectionPrefix}-DATA-actor-list`;
+  const actorResult = await getMaxOrder<ActorStore>(driver, actorCollectionName);
+  const actorCollection = actorResult.c;
+
+  const actorInfo: ActorStore = {
+    name: "",
+    type: "user",
+    tag: "",
+    pieceIdList: [],
+    chatFontColorType: "original",
+    chatFontColor: "#000000",
+    standImagePosition: 1,
+    statusId: "",
+    isUseTableData: false
+  };
+
+  const actorDocRef = await actorCollection.add({
+    ownerType: "user",
+    owner,
+    order: actorResult.maxOrder + 1,
+    exclusionOwner: null,
+    lastExclusionOwner: null,
+    status: "added",
+    createTime: new Date(),
+    updateTime: null,
+    data: actorInfo,
+    permission: PERMISSION_OWNER_CHANGE
+  });
+
+  const actorId = actorDocRef.id;
+
+  const statusId = await additionalStatus(driver, roomCollectionPrefix, actorId);
+
+  const copyParam = <T extends keyof ActorStore>(param: T) => {
+    if (actorInfoPartial[param] !== undefined) actorInfo[param] = actorInfoPartial[param] as ActorStore[T];
+  };
+  actorInfoPartial.statusId = statusId;
+  copyParam("name");
+  copyParam("type");
+  copyParam("chatFontColorType");
+  copyParam("chatFontColor");
+  copyParam("standImagePosition");
+  copyParam("statusId");
+  copyParam("isUseTableData");
+
+  await actorDocRef.update({
+    status: "modified",
+    data: actorInfo,
+    updateTime: new Date()
+  });
+
+  return actorId;
+}
+
+export async function addActorGroup(
+  driver: Driver,
+  roomCollectionPrefix: string,
+  id: string,
+  type: "user" | "other",
+  userId: string | null,
+  groupName: string
+): Promise<void> {
+  const actorGroupCollectionName = `${roomCollectionPrefix}-DATA-actor-group-list`;
+  const actorGroupCollection = driver.collection<StoreObj<ActorGroup>>(actorGroupCollectionName);
+
+  const groupDoc = (await actorGroupCollection.where("data.name", "==", groupName).get()).docs[0];
+  const data: ActorGroup = groupDoc.data!.data!;
+  data.list.push({
+    id,
+    type,
+    userId
+  });
+  await groupDoc.ref.update({
+    data
+  });
+}
+
+export async function addUser(
+  driver: Driver,
+  exclusionOwner: string,
+  roomCollectionPrefix: string,
+  name: string,
+  password: string,
+  type: UserType
+): Promise<UserLoginResponse> {
+  const roomUserCollectionName = `${roomCollectionPrefix}-DATA-user-list`;
+  const userCollection = driver.collection<StoreObj<UserStore>>(roomUserCollectionName);
+
+  const socketDocSnap = (await getSocketDocSnap(driver, exclusionOwner));
+
+  password = await hash(password, hashAlgorithm);
+
+  const token = uuid.v4();
+
+  const userDocRef = await userCollection.add({
+    ownerType: null,
+    owner: null,
+    order: -1,
+    exclusionOwner: null,
+    lastExclusionOwner: null,
+    status: "added",
+    createTime: new Date(),
+    updateTime: null,
+    data: {
+      name,
+      password,
       token,
-      userType,
+      type,
       login: 1
     },
-    permission: {
-      view: {
-        type: "none",
-        list: []
-      },
-      edit: {
-        type: "none",
-        list: []
-      },
-      chmod: {
-        type: "none",
-        list: []
-      }
-    }
+    permission: PERMISSION_DEFAULT
   });
 
   const userId = userDocRef.id;
@@ -205,22 +330,28 @@ export async function addUser(
     userId
   });
 
-  const addGroup = async (name: string) => {
-    const groupDoc = (await actorGroupCollection.where("data.name", "==", name).get()).docs[0];
-    const data: ActorGroup = groupDoc.data!.data!;
-    data.list.push({
-      type: "user",
-      id: userId
-    });
-    await groupDoc.ref.update({
-      data
-    });
-  };
-  await addGroup("All");
-  await addGroup("Users");
-  if (userType === "PL") await addGroup("Players");
-  if (userType === "GM") await addGroup("GameMasters");
-  if (userType === "VISITOR") await addGroup("Visitors");
+  const actorId: string = await addActor(driver, roomCollectionPrefix, userId, {
+    name: name,
+    type: "user",
+    chatFontColorType: "original",
+    chatFontColor: "#000000",
+    standImagePosition: 1,
+    isUseTableData: false
+  });
+
+  const addActorGroupFix = (addActorGroup as Function).bind(
+    null,
+    driver,
+    roomCollectionPrefix,
+    actorId,
+    "user",
+    userId
+  );
+  await addActorGroupFix("All");
+  await addActorGroupFix("Users");
+  if (type === "PL") await addActorGroupFix("Players");
+  if (type === "GM") await addActorGroupFix("GameMasters");
+  if (type === "VISITOR") await addActorGroupFix("Visitors");
 
   return {
     userId,
@@ -232,7 +363,8 @@ export async function addTouchier(
   driver: Driver,
   socketId: string,
   collection: string,
-  id: string
+  id: string,
+  updateTime: Date | null
 ): Promise<void> {
   const c = driver.collection<TouchierStore>(SYSTEM_COLLECTION.TOUCH_LIST);
   const doc: DocumentChange<TouchierStore> = (await c
@@ -245,7 +377,11 @@ export async function addTouchier(
     throw new SystemError(`Touchier is Exist. collection: ${collection}, id: ${id}, socketId: ${socketId}`);
   }
   await c.add({
-    socketId, collection, docId: id, time: new Date()
+    socketId,
+    collection,
+    docId: id,
+    time: new Date(),
+    backupUpdateTime: updateTime
   });
 }
 
@@ -254,7 +390,7 @@ export async function deleteTouchier(
   socketId: string,
   collection?: string,
   id?: string
-): Promise<void> {
+): Promise<Date | null> {
   const c = driver.collection<TouchierStore>(SYSTEM_COLLECTION.TOUCH_LIST);
   let q: Query<TouchierStore> = c.where("socketId", "==", socketId);
   if (collection !== undefined)
@@ -264,8 +400,10 @@ export async function deleteTouchier(
   const docList: DocumentChange<TouchierStore>[] = (await q.get()).docs;
   if (!docList || !docList.length) {
     console.warn(`deleteTouchier失敗 socket: ${socketId}, collection: ${collection}, id: ${id}`);
-    return;
+    return null;
   }
+
+  const backupUpdateTime = docList[0].data ? docList[0].data.backupUpdateTime : null;
 
   const deleteList = async (doc: DocumentSnapshot<TouchierStore>): Promise<void> => {
     await doc.ref.delete();
@@ -273,6 +411,8 @@ export async function deleteTouchier(
   await docList
     .map((doc: DocumentSnapshot<TouchierStore>) => () => deleteList(doc))
     .reduce((prev, curr) => prev.then(curr), Promise.resolve());
+
+  return backupUpdateTime;
 }
 
 export async function releaseTouch(
@@ -319,4 +459,54 @@ export async function getSocketDocSnap(driver: Driver, socketId: string): Promis
   if (!socketDocSnap) throw new ApplicationError(`No such socket.`, { socketId });
 
   return socketDocSnap;
+}
+
+export async function getMaxOrder<T>(driver: Driver, collectionName: string): Promise<{ c: CollectionReference<StoreObj<T>>, maxOrder: number }> {
+  const c = driver.collection<StoreObj<T>>(collectionName);
+
+  const docs = (await c
+    .orderBy("order", "desc")
+    .get())
+    .docs
+    .filter(doc => doc && doc.exists());
+
+  const maxOrder = !docs.length ? -1 : docs[0].data!.order;
+
+  return {
+    c, maxOrder
+  }
+}
+
+export async function getOwner(driver: Driver, socketId: string, owner: string | null | undefined): Promise<string | null> {
+  if (owner !== undefined) return owner;
+  const socketDocSnap = (await getSocketDocSnap(driver, socketId));
+  const userId = socketDocSnap.data!.userId;
+
+  // No such user check.
+  if (!userId) throw new ApplicationError(`No such user.`, { socketId });
+
+  return userId;
+}
+
+function arrayChunk(list: any[], size = 1) {
+  // 最初の要素は１つだけ
+  return list.reduce((acc, _value, index) => index % size ? acc : [...acc, list.slice(index, index + size)], []);
+}
+
+/**
+ * 並列に実行したい非同期処理を６つずつまとめて実行する
+ * @param promiseList
+ */
+export async function procAsyncSplit(promiseList: Promise<void>[]) {
+  const totalStart = process.hrtime();
+  await arrayChunk(promiseList, 6)
+    .map((list: Promise<void>[]) => async () => {
+      const start = process.hrtime();
+      await Promise.all(list);
+      const end = process.hrtime(start);
+      console.info('  time (hr): %dms', end[1] / 1000000);
+    })
+    .reduce((prev: Promise<void>, curr: () => Promise<void>) => prev.then(curr), Promise.resolve());
+  const totalEnd = process.hrtime(totalStart);
+  console.info('Total time (hr): %dms', totalEnd[1] / 1000000);
 }

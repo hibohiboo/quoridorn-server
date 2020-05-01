@@ -1,6 +1,6 @@
 import {Resister} from "../server";
 import {ApplicationError} from "../error/ApplicationError";
-import {getData, setEvent} from "./common";
+import {getData, procAsyncSplit, setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
 import {UpdateDataRequest} from "../@types/socket";
 import {releaseTouchData} from "./release-touch-data";
@@ -21,17 +21,39 @@ export async function updateData(driver: Driver, exclusionOwner: string, arg: Re
   // タッチ解除
   await releaseTouchData(driver, exclusionOwner, arg, true);
 
-  const docSnap = await getData(driver, arg.collection, arg.id);
+  await procAsyncSplit(arg.idList.map((id: string, idx: number) => singleUpdateData(
+    driver,
+    arg.collection,
+    id,
+    arg.dataList[idx],
+    arg.optionList ? arg.optionList[idx] : undefined
+  )));
+}
+
+export async function singleUpdateData(
+  driver: Driver,
+  collection: string,
+  id: string,
+  data: any,
+  option?: Partial<StoreObj<unknown>> & { continuous?: boolean }
+): Promise<void> {
+  const msgArg = { collection, id, option };
+  const docSnap = await getData(driver, collection, id);
 
   // No such check.
-  if (!docSnap || !docSnap.exists() || !docSnap.data.data) throw new ApplicationError(`No such data.`, arg);
+  if (!docSnap || !docSnap.exists() || !docSnap.data.data) throw new ApplicationError(`No such data.`, msgArg);
 
   const updateInfo: Partial<StoreObj<any>> = {
-    data: arg.data,
+    data,
     status: "modified",
     updateTime: new Date()
   };
-  if (arg.permission) updateInfo.permission = arg.permission;
+  if (option) {
+    if (option.permission) updateInfo.permission = option.permission;
+    if (option.order !== undefined) updateInfo.order = option.order || 0;
+    if (option.owner) updateInfo.owner = option.owner;
+    if (option.ownerType) updateInfo.ownerType = option.ownerType;
+  }
   try {
     await docSnap.ref.update(updateInfo);
   } catch (err) {

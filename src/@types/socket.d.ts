@@ -1,8 +1,6 @@
 import {ChangeType} from "nekostore/lib/DocumentChange";
-import {Permission, StoreMetaData, StoreObj} from "./store";
+import {StoreMetaData, StoreObj} from "./store";
 import {TargetVersion} from "../utility/GitHub";
-
-type MapShape = "square" | "horizontal-hex" | "vertical-hex";
 
 export type RoomInfoExtend = {
   visitable: boolean;
@@ -15,14 +13,13 @@ export type RoomInfoExtend = {
   standImage: boolean;
   cutIn: boolean;
   drawMapAddress: boolean;
-  mapShape: MapShape;
-  drawMapShape: boolean;
-  autoFitMapShape: boolean;
-  autoResizeStandImage: boolean;
+  drawMapGrid: boolean;
+  autoFitMapCell: boolean;
 };
 
 export type BaseRoomInfo = {
   name: string;
+  bcdiceServer: string;
   system: string;
   extend?: RoomInfoExtend; // 一時的措置
 };
@@ -38,9 +35,9 @@ export type RoomLoginRequest = RoomLoginInfo;
 type UserType = "GM" | "PL" | "VISITOR";
 
 export type UserLoginRequest = {
-  userName: string;
-  userType?: UserType;
-  userPassword: string;
+  name: string;
+  type?: UserType;
+  password: string;
 };
 
 export type UserLoginResponse = {
@@ -78,6 +75,7 @@ export type RoomViewResponse = {
 
 export type LoginResponse = ClientRoomInfo & {
   roomCollectionPrefix: string;
+  storageId: string;
 };
 
 export type GetVersionResponse = {
@@ -88,24 +86,38 @@ export type GetVersionResponse = {
 
 export type TouchDataRequest = {
   collection: string;
-  id?: string;
+  idList?: string[];
+  optionList?: Partial<StoreObj<unknown>>[];
 };
 export type TouchModifyDataRequest = TouchDataRequest & {
-  id: string;
+  idList: string[];
 };
 export type ReleaseTouchDataRequest = TouchModifyDataRequest & {
-  continuous?: boolean;
+  optionList?: (Partial<StoreObj<unknown>> & { continuous?: boolean })[];
 };
 
+export type AddDirectRequest = {
+  collection: string;
+  dataList: any[];
+  optionList?: Partial<StoreObj<unknown>>[];
+};
 export type CreateDataRequest = TouchModifyDataRequest & {
-  order?: number;
-  data: any;
-  permission: Permission;
+  dataList: any[];
 };
 export type DeleteDataRequest = TouchModifyDataRequest;
 export type UpdateDataRequest = TouchModifyDataRequest & {
-  order?: number;
-  data: any;
-  permission?: Permission;
-  continuous?: boolean;
+  dataList: any[];
+  optionList?: (Partial<StoreObj<unknown>> & { continuous?: boolean })[];
 };
+
+export type SendDataRequest = {
+  targetList: string[],
+  data: any;
+};
+
+export type UploadFileInfo = {
+  name: string;
+  src: string;
+};
+
+export type UploadFileRequest = UploadFileInfo[];

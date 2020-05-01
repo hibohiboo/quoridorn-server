@@ -1,8 +1,9 @@
 import {Resister} from "../server";
 import {ApplicationError} from "../error/ApplicationError";
-import {deleteTouchier, getData, setEvent} from "./common";
+import {deleteTouchier, getData, procAsyncSplit, setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
 import {ReleaseTouchDataRequest} from "../@types/socket";
+import {StoreObj} from "../@types/store";
 
 // インタフェース
 const eventName = "release-touch-data";
@@ -17,21 +18,40 @@ type ResponseType = void;
  * @param updateForce
  */
 export async function releaseTouchData(driver: Driver, exclusionOwner: string, arg: RequestType, updateForce?: boolean): Promise<ResponseType> {
-  const docSnap = await getData(driver, arg.collection, arg.id, { exclusionOwner });
+  await procAsyncSplit(arg.idList.map((id: string, idx: number) => singleReleaseTouchData(
+    driver,
+    exclusionOwner,
+    arg.collection,
+    id,
+    arg.optionList ? (arg.optionList[idx] || undefined) : undefined,
+    updateForce
+  )));
+}
+
+async function singleReleaseTouchData(
+  driver: Driver,
+  exclusionOwner: string,
+  collection: string,
+  id: string,
+  option?: Partial<StoreObj<unknown>> & { continuous?: boolean },
+  updateForce?: boolean
+): Promise<void> {
+  const msgArg = { collection, id, option };
+  const docSnap = await getData(driver, collection, id, { exclusionOwner });
 
   const createThrowDetail = (detail: string) => updateForce ? `Failure releaseTouchData. (${detail})` : detail;
 
-  if (!docSnap) throw new ApplicationError(createThrowDetail("Already released touch or created."), arg);
+  if (!docSnap) throw new ApplicationError(createThrowDetail("Already released touch or created."), msgArg);
 
   // 続けて更新する場合は排他制御情報をリセットしない
-  if (arg.continuous) return;
+  if (option && option.continuous) return;
 
-  await deleteTouchier(driver, exclusionOwner, arg.collection, docSnap.ref.id);
+  const backupUpdateTime = await deleteTouchier(driver, exclusionOwner, collection, docSnap.ref.id);
 
   if (updateForce || docSnap.data!.data) {
     const updateInfo = {
       exclusionOwner: null,
-      updateTime: new Date()
+      updateTime: backupUpdateTime
     };
     try {
       await docSnap.ref.update(updateInfo);
@@ -42,7 +62,7 @@ export async function releaseTouchData(driver: Driver, exclusionOwner: string, a
     try {
       await docSnap.ref.delete();
     } catch (err) {
-      throw new ApplicationError(createThrowDetail("Failure delete doc."), arg);
+      throw new ApplicationError(createThrowDetail("Failure delete doc."), msgArg);
     }
   }
 }
