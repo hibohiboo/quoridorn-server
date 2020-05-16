@@ -89,6 +89,9 @@ export type TouchDataRequest = {
   idList?: string[];
   optionList?: Partial<StoreObj<unknown>>[];
 };
+export type DeleteFileRequest = {
+  urlList: string[];
+};
 export type TouchModifyDataRequest = TouchDataRequest & {
   idList: string[];
 };
