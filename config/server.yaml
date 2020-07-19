@@ -35,6 +35,5 @@ roomNum: 100
 # 無限にする場合は -1 を設定
 # ※ 未実装
 roomAutoRemove: 4320
-
 # MongoDBの接続文字列
-mongodbConnectionStrings: mongodb://127.0.0.1:27017/
+#mongodbConnectionStrings: mongodb://127.0.0.1:27017/
