@@ -1,12 +1,13 @@
 import {StoreObj} from "../@types/store";
 import {Resister} from "../server";
-import {addActorGroup, additionalStatus, getData, getSocketDocSnap, procAsyncSplit, setEvent} from "./common";
+import {addActorGroup, getData, getSocketDocSnap, procAsyncSplit, setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
 import DocumentSnapshot from "nekostore/lib/DocumentSnapshot";
 import {ApplicationError} from "../error/ApplicationError";
 import {releaseTouchData} from "./release-touch-data";
 import {CreateDataRequest} from "../@types/socket";
 import {ActorStore} from "../@types/data";
+import {addDirect} from "./add-direct";
 
 // インタフェース
 const eventName = "create-data";
@@ -16,17 +17,23 @@ type ResponseType = string[];
 /**
  * データ作成処理
  * @param driver
- * @param exclusionOwner
+ * @param socket
  * @param arg
  */
-async function createData(driver: Driver, exclusionOwner: string, arg: RequestType): Promise<ResponseType> {
+async function createData(
+  driver: Driver,
+  socket: any,
+  arg: RequestType
+): Promise<ResponseType> {
+  const exclusionOwner: string = socket.id;
+
   // タッチ解除
   await releaseTouchData(driver, exclusionOwner, arg, true);
   const resultIdList: string[] = [];
 
   await procAsyncSplit(arg.idList.map((id: string, idx: number) => singleReleaseCreateData(
     driver,
-    exclusionOwner,
+    socket,
     arg.collection,
     id,
     arg.dataList[idx],
@@ -39,13 +46,15 @@ async function createData(driver: Driver, exclusionOwner: string, arg: RequestTy
 
 async function singleReleaseCreateData(
   driver: Driver,
-  exclusionOwner: string,
+  socket: any,
   collection: string,
   id: string,
   data: any,
   resultIdList: string[],
   option?: Partial<StoreObj<unknown>> & { continuous?: boolean }
 ): Promise<void> {
+  const exclusionOwner: string = socket.id;
+
   const msgArg = { collection, id, option };
   const roomCollectionPrefix = collection.replace(/-DATA-.+$/, "");
 
@@ -66,7 +75,21 @@ async function singleReleaseCreateData(
 
   if (collection.endsWith("DATA-actor-list")) {
     // アクターにはデフォルトステータスを登録する
-    (data as ActorStore).statusId = await additionalStatus(driver, roomCollectionPrefix, id);
+    (data as ActorStore).statusId = (await addDirect(driver, socket, {
+      collection: `${roomCollectionPrefix}-DATA-status-list`,
+      dataList: [
+        {
+          name: "◆",
+          isSystem: true,
+          standImageInfoId: null,
+          chatPaletteInfoId: null
+        }
+      ],
+      optionList: [{
+        ownerType: "actor",
+        owner: id
+      }]
+    }, false))[0];
 
     // アクターグループ「All」に追加
     await addActorGroup(driver, roomCollectionPrefix, id, "other", null, "All");
@@ -88,6 +111,6 @@ async function singleReleaseCreateData(
 }
 
 const resist: Resister = (driver: Driver, socket: any): void => {
-  setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => createData(driver, socket.id, arg));
+  setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => createData(driver, socket, arg));
 };
 export default resist;

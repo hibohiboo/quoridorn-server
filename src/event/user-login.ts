@@ -1,7 +1,7 @@
 import {PERMISSION_DEFAULT, hashAlgorithm, Resister, SYSTEM_COLLECTION} from "../server";
 import {SystemError} from "../error/SystemError";
 import {verify} from "../utility/password";
-import {addUser, getSocketDocSnap, setEvent} from "./common";
+import {addUser, getSocketDocSnap, resistCollectionName, setEvent} from "./common";
 import Driver from "nekostore/lib/Driver";
 import DocumentSnapshot from "nekostore/lib/DocumentSnapshot";
 import {UserLoginRequest, UserLoginResponse, UserType} from "../@types/socket";
@@ -18,10 +18,12 @@ type ResponseType = UserLoginResponse;
 /**
  * ログイン処理
  * @param driver
- * @param exclusionOwner
+ * @param socket
  * @param arg
  */
-async function userLogin(driver: Driver, exclusionOwner: string, arg: RequestType): Promise<ResponseType> {
+async function userLogin(driver: Driver, socket: any, arg: RequestType): Promise<ResponseType> {
+  const exclusionOwner: string = socket.id;
+
   // 部屋一覧の更新
   const socketDocSnap = (await getSocketDocSnap(driver, exclusionOwner));
 
@@ -57,6 +59,7 @@ async function userLogin(driver: Driver, exclusionOwner: string, arg: RequestTyp
     // ユーザが存在しない場合
     userLoginResponse = await addUser(
       driver,
+      socket,
       exclusionOwner,
       roomCollectionPrefix,
       arg.name,
@@ -176,10 +179,12 @@ async function userLogin(driver: Driver, exclusionOwner: string, arg: RequestTyp
     }
   });
 
+  await resistCollectionName(driver, roomSocketUserCollectionName);
+
   return userLoginResponse;
 }
 
 const resist: Resister = (driver: Driver, socket: any): void => {
-  setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => userLogin(driver, socket.id, arg));
+  setEvent<RequestType, ResponseType>(driver, socket, eventName, (driver: Driver, arg: RequestType) => userLogin(driver, socket, arg));
 };
 export default resist;
