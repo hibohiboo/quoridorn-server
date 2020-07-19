@@ -136,6 +136,15 @@ https://192.168.60.79/socket.io/
 
 `ERR_CERT_AUTHORITY_INVALID`のエラーが消えて、プレイルームが表示できた！
 
+## mongodb をみたい
+
+以下の URL にアクセス
+http://192.168.60.79:3000/
+
+connect を選び、Host/Port を`mongo`、`27017`とし、
+DatabaseName を`quoridorn-1-0-0a44`にして「Save」
+接続して確認する。
+
 ## 参考
 
 [chocolatey instration](https://chocolatey.org/docs/installation)
