@@ -67,3 +67,4 @@ mongo "mongodb+srv://<hoge>.gcp.mongodb.net/<dbname>" --username <fuga>
 
 [MongoDB Atlas で無料で簡単にクラスタ化する](https://qiita.com/ka_nabell_dev/items/0e91ae7646ddc78e514f)
 [deploy free tier cluster](https://docs.atlas.mongodb.com/tutorial/deploy-free-tier-cluster/)
+[MongoDB 基礎：DB 接続の書き方](https://qiita.com/chenglin/items/ecf6f67e8f80c4750204)

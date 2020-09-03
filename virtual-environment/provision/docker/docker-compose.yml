@@ -54,6 +54,7 @@ services:
       - backend
     depends_on:
       - mongo
+      - minio
 
   ### NGINX Server #########################################
   nginx:
@@ -75,5 +76,20 @@ services:
       - "${NGINX_HOST_HTTPS_PORT}:443"
     depends_on:
       - node-server
+    networks:
+      - backend
+
+  ### Minio ################################################
+  minio:
+    build: ./minio
+    volumes:
+      - ${DATA_PATH_HOST}/minio/data:/export
+      - ${DATA_PATH_HOST}/minio/config:/root/.minio
+      - /etc/localtime:/etc/localtime:ro # 時刻の同期
+    ports:
+      - "${MINIO_PORT}:9000"
+    environment:
+      - MINIO_ACCESS_KEY=access
+      - MINIO_SECRET_KEY=secretkey
     networks:
       - backend
