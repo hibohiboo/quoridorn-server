@@ -20,6 +20,16 @@ export type TouchierStore = {
   backupUpdateTime: Date | null;
 };
 
+export type TokenStore = {
+  type: "server" | "room" | "user";
+  token: string;
+  roomCollectionPrefix: string | null;
+  roomNo: number | null;
+  storageId: string | null;
+  userId: string | null;
+  expires: Date;
+}
+
 export type SocketStore = {
   socketId: string;
   roomId: string | null;
@@ -122,11 +132,28 @@ type ResourceStore = {
   value: string;
 };
 
+export type IconClass =
+  | "icon-warning"
+  | "icon-youtube2"
+  | "icon-image"
+  | "icon-music"
+  | "icon-text";
+
+export type UrlType =
+  | "youtube"
+  | "image"
+  | "music"
+  | "setting"
+  | "unknown";
+
 type MediaInfo = {
-  tag: string;
   name: string;
+  tag: string;
   url: string;
-  type: string;
+  urlType: UrlType;
+  iconClass: IconClass;
+  imageSrc: string;
+  dataLocation: "server" | "direct";
 };
 
 /**
@@ -256,4 +283,86 @@ type Scene = ChatLinkable & {
     maskBlur: number;
     border: Border;
   };
+};
+
+type Point = {
+  x: number;
+  y: number;
+};
+
+type Matrix = {
+  column: number;
+  row: number;
+};
+
+type Address = Point & Matrix;
+
+/**
+ * sceneAndObjectCCのデータ定義
+ * マップとオブジェクトの紐付き1本単位の情報
+ */
+type SceneAndObject = {
+  sceneId: string;
+  objectId: string;
+  // startTimeStatus: "" | "normal" | string; // マップに同期切替した際に設定されるステータス（キャラクターのみ）
+  // startTimePlace: "" | Place; // マップに同期切替した際に設定される場所
+  isOriginalAddress: boolean; // マップ独自の座標を持つかどうか
+  originalAddress: Address | null; // 独自座標を持つならその座標
+  entering: "normal" | string; // 登場の仕方
+};
+
+type ChatPaletteStore = {
+  name: string,
+  paletteText: string;
+  chatFontColorType: "owner" | "original"; // チャット文字色はオーナーの色か独自の色か
+  chatFontColor: string; // 独自のチャット文字色
+  actorId: string | null;
+  sceneObjectId: string | null;
+  targetId: string | null;
+  outputTabId: string | null;
+  statusId: string | null;
+  system: string | null;
+  isSecret: boolean;
+};
+
+export type DiceType = {
+  faceNum: string;
+  subType: string;
+  label: string;
+};
+
+export type DiceAndPips = {
+  diceTypeId: string;
+  pips: string;
+  mediaId: string;
+};
+
+type SceneObjectType =
+  | "character"
+  | "map-mask"
+  | "map-marker"
+  | "dice-symbol"
+  | "chit"
+  | "floor-tile";
+
+type Place = "field" | "graveyard" | "backstage";
+type SceneObject = Address & {
+  type: SceneObjectType;
+  tag: string;
+  name: string;
+  actorId: string | null; // id
+  rows: number;
+  columns: number;
+  isHideBorder: boolean;
+  isHideHighlight: boolean;
+  isLock: boolean;
+  place: Place;
+  layerId: string;
+  textures: Texture[];
+  textureIndex: number;
+  angle: number;
+  url: string; // character
+  subTypeId: string; // サイコロの種類など
+  subTypeValue: string; // 出目など
+  isHideSubType: boolean; // 出目を隠すかどうか
 };
