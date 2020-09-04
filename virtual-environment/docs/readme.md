@@ -170,11 +170,13 @@ http://192.168.60.79:9000/minio/
 
 ## 参考
 
-[chocolatey instration](https://chocolatey.org/docs/installation)
-[laradock](https://github.com/laradock/laradock)
-[Laradock の Nginx を SSL 化する](https://qiita.com/osakana9114/items/48fb03e51e23dd02871c)
-[WSS が繋がらない](http://wiki.brekeke.jp/WSS-%E3%81%8C%E7%B9%8B%E3%81%8C%E3%82%89%E3%81%AA%E3%81%84)
-[Nginx によるリバースプロキシの設定方法](https://qiita.com/schwarz471/items/9b44adfbec006eab60b0)
-[websocket を使う際の意外な落とし穴](https://blog.mitsuruog.info/2012/10/websocket.html)
-[socketi.io](https://socket.io/)
-[node.js 超入門 ①node.js で web サーバを作ってみる](https://qiita.com/ritukiii/items/7f28554369d63eb373c3)
+[chocolatey instration](https://chocolatey.org/docs/installation)  
+[laradock](https://github.com/laradock/laradock)  
+[Laradock の Nginx を SSL 化する](https://qiita.com/osakana9114/items/48fb03e51e23dd02871c)  
+[WSS が繋がらない](http://wiki.brekeke.jp/WSS-%E3%81%8C%E7%B9%8B%E3%81%8C%E3%82%89%E3%81%AA%E3%81%84)  
+[Nginx によるリバースプロキシの設定方法](https://qiita.com/schwarz471/items/9b44adfbec006eab60b0)  
+[websocket を使う際の意外な落とし穴](https://blog.mitsuruog.info/2012/10/websocket.html)  
+[socketi.io](https://socket.io/)  
+[node.js 超入門 ①node.js で web サーバを作ってみる](https://qiita.com/ritukiii/items/7f28554369d63eb373c3)  
+[minio](https://github.com/minio/minio)
+[Quoridorn-mark2の雑な導入手順](https://www.taruki.com/wp/?p=7602)  
