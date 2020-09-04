@@ -93,6 +93,7 @@ vagrant provision
 - mongo
 - mongo-webui
 - nginx
+- minio
 
 ### 設定について
 
@@ -104,9 +105,20 @@ MONGO_WEBUI_PORT=3000
 MONGO_WEBUI_ROOT_URL=http://192.168.74.60
 MONGO_WEBUI_MONGO_URL=mongodb://mongo:27017/quoridorn
 MONGO_WEBUI_INSTALL_MONGO=false
+
+### MINIO #################################################
+
+MINIO_PORT=9000
 ```
 
 MONGO_WEBUI_MONGO_URL の quoridorn が作成を期待する DB となる。
+
+S3バケットのMINIOのポートを設定
+
+### minioについて
+最初に以下のURLにアクセスして、quoridornバケットを作成する。
+ログイン時のaccess keyはaccessでsecretkeyはsecretkey（docker-compose.yml参照）
+http://192.168.60.79:9000/minio/
 
 ### SSL について
 
@@ -144,6 +156,11 @@ http://192.168.60.79:3000/
 connect を選び、Host/Port を`mongo`、`27017`とし、
 DatabaseName を`quoridorn-1-0-0a44`にして「Save」
 接続して確認する。
+
+## minioをみたい
+
+以下のURLにアクセス
+http://192.168.60.79:9000/minio/
 
 ## 参考
 
