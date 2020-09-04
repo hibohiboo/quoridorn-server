@@ -45,7 +45,13 @@ cinst -y git virtualbox vagrant
 vagrant plugin install vagrant-vbguest
 ```
 
-### 3. git clone
+### 3.1 git clone
+
+cloneを行う
+
+### 3.2 quoridornの設定ファイル修正
+quoridornのREADME.mdの手順にしたがい、.exampleの末尾が入っているファイルを粛々とコピー＆リネーム。
+
 
 ### 4. vagrant up
 
